@@ -1,12 +1,18 @@
 # mpiSUPAERO
 
-## grupo 9
+## Editors on serv-prol1:
+- greany
+- gedit
+
+grupo 9
  
 ```
 serv_prol1
 ```
 
 ## open a terminal 
+
+
 
  
 ```
