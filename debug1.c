@@ -75,7 +75,7 @@ int main(int argc, char** argv){
   nProcsY = 2;
   nProcs = nProcsX*nProcsY;
   
-
+  int ncols, nrows;
 
 //Allocation of the image in and out fields and the Kernel Matrix
 //- matrix_Halo = full field, with the halo of 0 
@@ -90,40 +90,43 @@ if (process_Rank ==0) {
   pprintf(matrix_Halo, w+2, h+2);
   printf("\n");
   matrix_Halo = resizeMatrix(matrix_Halo, (h+2), (w+2), nProcsX, nProcsY, &h_new, &w_new); //add zeros to matrix_HALO to make it fit with nProcsX, nProcs
+  //ncols =  w_new/nProcsX;
+  //nrows =  h_new/nProcsY;
   pprintf(matrix_Halo, w_new, h_new);
+  //printf("Processor %d received, ncols = %d, nrows = %d, w = %d, h= %d, wnew = %d, hnew= %d \n", process_Rank, ncols, nrows, w, h, w_new, h_new);
 
   // we have w_new and h_new that are divisible by nProcsX and nProcsY, respectivelly
-  MPI_Bcast(&w_new, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&h_new, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+
   free(image_kernel_out); 
   //pprintf(matrix)
- 
-  //printf("%d HOLAAAA",w_new);
-
 }
-
+MPI_Bcast(&w_new, 1, MPI_INT, 0, MPI_COMM_WORLD);
+MPI_Bcast(&h_new, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 MPI_Barrier(MPI_COMM_WORLD);
 int *kernelMatrix = KERNEL1; //Kernel to be applied //QUITAR: tenemos que ponerlo fuera del processor 0?
   
+  ncols =  w_new/nProcsX;
+  nrows =  h_new/nProcsY;
+
 int w_submatrix = w_new/nProcsX;
 int h_submatrix = h_new/nProcsY;
 int nMessages = w_new/nProcsX*h_new/nProcsY;
 
-int ncols =  w_new/nProcsX;
-int nrows =  h_new/nProcsY;
+//int ncols =  w_new/nProcsX;
+//int nrows =  h_new/nProcsY;
 
 
 // Allocate memory for the submatrix on each process
 N = malloc(ncols * nrows * sizeof(int));
-printf("ncols = %d, nrows = %d, w = %d, h= %d, wnew = %d, hnew= %d", ncols, nrows, w, h, w_new, h_new);
+printf("Processor %d received, ncols = %d, nrows = %d, w = %d, h= %d, wnew = %d, hnew= %d \n", process_Rank, ncols, nrows, w, h, w_new, h_new);
 
 printf("size M %ld, size  %ld \n", sizeof(N), sizeof(matrix_Halo));
   // Calculate the send counts and displacements for MPI_Scatterv()
-  int *send_counts = malloc(nProcs * sizeof(int));
-  int *displs = malloc(nProcs * sizeof(int));
+int *send_counts = malloc(nProcs * sizeof(int));
+int *displs = malloc(nProcs * sizeof(int));
   for (int i = 0; i < nProcs; i++) {
       send_counts[i] = ncols * nrows;
-      displs[i] = (i / nProcsY) * nrows * w + (i % nProcsX) * ncols;
+      displs[i] = (i / nProcsY) * nrows * w_new + (i % nProcsX) * ncols;
   }
 
 
@@ -131,12 +134,12 @@ printf("size M %ld, size  %ld \n", sizeof(N), sizeof(matrix_Halo));
 MPI_Scatterv(matrix_Halo, send_counts, displs, MPI_INT, N, ncols * nrows, MPI_INT, 0, MPI_COMM_WORLD);
 
 printf("Process %d received submatrix:\n", process_Rank);
-   for (int i = 0; i < nrows; i++) {
+  for (int i = 0; i < nrows; i++) {
         for (int j = 0; j < ncols; j++) {
             printf("%d ", N[i * ncols + j]);
         }
         printf("\n");
-    }
+  }
 
 free(send_counts);
 
