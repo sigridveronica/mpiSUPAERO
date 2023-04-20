@@ -24,6 +24,7 @@
             Convolution += M2(Kernel,(i),j,(a)) * M2(MATRIX, (index_i - 1 + i),(index_j - 1 + j),w); \
         } \
     }
+//#define CONV(kernel, M, i, j, w, result) (result = kernel(1)*M2(i,j,w)*
 // a: nRows = nCols of the matrix Kernel (assuming is square)
 // index_i, index_j: Center indexes for the multiplication
 // w: nCols of MATRIX 
@@ -40,6 +41,9 @@ void pprintf(int *matrix, int w, int h);
 void print_matrix(int* matrix, int nrows, int ncols);
 void find_close_factors(int z, int *x, int *y);
 int* resizeMatrix(int* matrix, int h, int w, int NX, int NY, int* h_new, int* w_new);
+
+
+int * remove_halo(int*M,  int w, int h, int w_new, int h_new);
 
 #define AA 2048
 #define BB 2048
@@ -82,7 +86,7 @@ int main(int argc, char** argv){
     posProcX = process_Rank%nProcsX;
     posProcY = process_Rank/nProcsY;
 
-printf( " process %d gest (%d, %d) \n", process_Rank, posProcX, posProcY);
+//printf( " process %d gest (%d, %d) \n", process_Rank, posProcX, posProcY);
 
   //Number of cells in the grid
     int NX, NY;
@@ -108,7 +112,10 @@ if (process_Rank ==0) {
   matrix_Halo = resizeMatrix(image_kernel_out, (h+2), (w+2), nProcsX, nProcsY, &h_new, &w_new); //add zeros to matrix_HALO to make it fit with nProcsX, nProcs
   //ncols =  w_new/nProcsX;
   //nrows =  h_new/nProcsY;
+  printf("initial matrix with the extra 0 is");
   pprintf(matrix_Halo, w_new, h_new);
+  printf("\n");
+  
   //printf("Processor %d received, ncols = %d, nrows = %d, w = %d, h= %d, wnew = %d, hnew= %d \n", process_Rank, ncols, nrows, w, h, w_new, h_new);
 
   // we have w_new and h_new that are divisible by nProcsX and nProcsY, respectivelly
@@ -132,7 +139,7 @@ if (process_Rank != 0) {
 // Broadcast w_new, h_new, and matrix_Halo
 MPI_Bcast(matrix_Halo, (w_new)*(h_new), MPI_INT, 0, MPI_COMM_WORLD);
 
-printf(" HUOOOOO\n");
+//printf(" HUOOOOO\n");
 MPI_Barrier(MPI_COMM_WORLD);
 
 ncols =  w_new/nProcsX;
@@ -149,15 +156,16 @@ int nMessages = w_new/nProcsX*h_new/nProcsY;
 
 // Allocate memory for the submatrix on each process
 N = malloc(ncols * nrows * sizeof(int));
+int* N_result = malloc((ncols-2) * (nrows-2) * sizeof(int));
 
 int result = 0;
 int a =0;
 int resultx, resulty;
 int ii, jj;
-if (process_Rank==2){
-    printf("  %d %d \n", posProcX, posProcY);
-  for (int index_i = 1; index_i < ncols; index_i++){
-      for (int index_j = 1; index_j < nrows; index_j++){
+
+    //printf("  %d %d \n", posProcX, posProcY);
+  for (int index_i = 1; index_i < (ncols); index_i++){
+      for (int index_j = 1; index_j < (nrows); index_j++){
         a=0;
          //CONVOLUTION(matrix_Halo, matrix_Halo, 3, proci2glob(index_i), procj2glob(index_j), w, result); 
 
@@ -165,38 +173,41 @@ if (process_Rank==2){
             for (int j = 0; j < 3; j++) {
                 resultx = index_i- 1 + i;
                 resulty = (index_j)- 1 + j;
-                
+                //Fix this, it does not work
                 a = a+ kernelMatrix[i*3+j] * matrix_Halo[proc2Glob(resultx, resulty)]; 
+                //printf("%d ", matrix_Halo[proc2Glob(resultx, resulty)]);
                
             }
         // Allocation in the locald field of each result
-        ii = index_i-1;
-        jj = index_j-1;
-        N[ii*(ncols-2)+jj] = matrix_Halo[(jj+ posProcX*w_new/nProcsX + (ii+posProcY*h_new/nProcsY)*w_new)];
-        //printf("%d, ",M2(N, (index_i),((index_j)),ncols));
-       //printf("Hola: %d \n", N[ii*(ncols-2)+jj]);
+
+        //M2(N, ii, jj, (ncols-2)) =  matrix_Halo[proc2Glob(ii,jj)];
     
         } 
+        ii = index_i-1;
+        jj = index_j-1;
+        M2(N, ii, jj, (ncols-2)) =  matrix_Halo[proc2Glob(ii,jj)];
 
         //printf("%d ", a);   
       }
     }
-    pprintf(N, ncols-2, nrows-2);
-}
-/*
-if (process_Rank==2){
-for (int k=0; k<nProcs; k++){
- if (process_Rank==k){
-        pprintf(N, ncols,nrows);
-        printf("Process got \n");
-    }
+   // pprintf(N, ncols-2, nrows-2);
 
+/*
+for (int i=0; i<(ncols-2); i++){
+    for (int j=0; j<(nrows-2); j++){
+        M2(N_result, i, j, (ncols-2) ) =M2(N, i,j,(ncols-2));
+
+    }
 }
-}
-*/
+if (process_Rank==2){
+
+printf("\n");
+pprintf(N_result, ncols-2, nrows-2);
+}*/
+
 //Sending the results back to the root processor:
 
-nMessages =ncols*nrows;
+nMessages =(ncols-2)*(nrows-2);
 
 MPI_Request request;
 
@@ -214,10 +225,10 @@ if (process_Rank==0){
 
 
     
-  for (int i=0; i<nrows; i++) {
-     for (int j=0; j<ncols ; j++) {
+  for (int i=0; i<nrows-2; i++) {
+     for (int j=0; j<ncols-2 ; j++) {
 
-                //matrix_Halo[proc2Glob(i,j)] = 3;//N[i+j*(ncols)];
+                matrix_Halo[proc2Glob(j,i)] = N[i+j*(ncols-2)];
                 //printf(" %d ", proc2Glob(i,j));
 
             }
@@ -226,25 +237,16 @@ if (process_Rank==0){
      }
  }
 
+        printf("matrix has been received by process 0 from other processors and ensambled: \n");
+        pprintf(matrix_Halo, w_new, h_new);
+        printf("\n");
+        
 
+        int *smallM = remove_halo(matrix_Halo,   w, h, w_new, h_new);
+        printf("matrix has been received by process 0 from other processors and ensambled: \n");
+        pprintf(smallM, w, h);
+        printf("\n");
 
-     // for (int j=NY-1; j>=0; j--){
-         for (int j=0; j<NX; j++){
-     for(int i=0; i<NX ; i++) {
-
-
-
-                //GlobalField[g2m(i,j)] = g2m(i,j);
-                //printf("%d ", (int)GlobalField[g2m(i,j)]);
-
-                //a = (int)(M[w*j+i]);
-                //printf("%d ",a);
-                //fprintf("%hhu ", (unsigned char)M[j+i*w]); // File
-            }
-            //printf("\n");
-            printf( "\n"); //File
-        }
-        //fclose(fp); // File
 
 
           free(matrix_Halo);
@@ -498,4 +500,19 @@ void find_close_factors(int z, int *x, int *y) {
 
     *x = 1;
     *y = z + 1;
+}
+
+int * remove_halo(int*M,  int w, int h, int w_new, int h_new){
+    int* smallM = malloc(w*h*sizeof(int));
+    int offsetx, offsety, ii, jj;
+    offsetx = w_new- w-1;
+    offsety = h_new - h-2;
+    for (int i=0; i<h; i++){
+        for(int j=0; j<w;j++){
+            ii = offsetx+i;
+            jj = offsety+j;
+            M2(smallM, i, j, w) = M2(M, ii, jj, w_new);
+        }
+    }
+    return smallM;
 }
